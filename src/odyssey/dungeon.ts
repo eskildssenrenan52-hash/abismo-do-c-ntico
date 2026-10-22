@@ -75,7 +75,10 @@ export interface FloorChest { id: string; tx: number; ty: number; gold: number; 
 export interface DungeonFloor {
   floor: number; theme: Theme; world: World; w: number; h: number; ox: number; oy: number; rooms: Room[];
   start: { tx: number; ty: number }; stairs: { tx: number; ty: number }; spawns: FloorSpawn[]; chests: FloorChest[]; boss: BossDef | null;
+  /** Tochas de parede (poucas): as únicas luzes fixas do andar. */
+  torches: { tx: number; ty: number }[];
 }
+export interface FloorOptions { theme: Theme; seed: number; size: { w: number; h: number }; level: number; idPrefix: string; eliteBonus?: number }
 
 function rng(seed: number) {
   let a = seed >>> 0;
@@ -85,15 +88,15 @@ export const floorSize = (floor: number) => ({ w: Math.round(70 + floor * 1.3), 
 
 const LOOT_TIERS = [['potion', 'ether', 'herb', 'iron_ore'], ['hi_potion', 'ether', 'mana_shard', 'crystal_ore'], ['hi_potion', 'elixir', 'crystal_ore', 'mana_shard'], ['elixir', 'eco_shard', 'crystal_ore'], ['elixir', 'eco_shard', 'void_essence']];
 
-export function generateFloor(floor: number): DungeonFloor {
-  const theme = themeOf(floor), r = rng(floor * 7919 + 13);
-  const { w, h } = floorSize(floor);
+export function generateFloor(floor: number, opts?: FloorOptions): DungeonFloor {
+  const theme = opts?.theme ?? themeOf(floor), r = rng(opts?.seed ?? floor * 7919 + 13);
+  const { w, h } = opts?.size ?? floorSize(floor);
   const tiles = new Uint8Array(W * H).fill(theme.wall);
   const biomes = new Uint8Array(W * H).fill(Math.max(0, BIOME_LIST.indexOf(theme.biome)));
   const set = (x: number, y: number, t: number) => { if (x > OX && y > OY && x < OX + w - 1 && y < OY + h - 1) tiles[y * W + x] = t; };
   const carve = (x: number, y: number, rw: number, rh: number) => { for (let yy = y; yy < y + rh; yy++) for (let xx = x; xx < x + rw; xx++) set(xx, yy, theme.floor); };
   const rooms: Room[] = [];
-  const final = floor >= ABYSS_FLOORS, guardian = isGuardianFloor(floor);
+  const final = !opts && floor >= ABYSS_FLOORS, guardian = !opts && isGuardianFloor(floor);
   const overlaps = (a: Room) => rooms.some(b => a.x < b.x + b.w + 3 && a.x + a.w + 3 > b.x && a.y < b.y + b.h + 3 && a.y + a.h + 3 > b.y);
 
   if (final) {
@@ -147,7 +150,7 @@ export function generateFloor(floor: number): DungeonFloor {
     for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; set(Math.round(c.x + Math.cos(a) * 22), Math.round(c.y + Math.sin(a) * 16), T.PILLAR); }
     for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2 + 0.2; set(Math.round(c.x + Math.cos(a) * 30), Math.round(c.y + Math.sin(a) * 22), T.LAVA); }
   }
-  const level = floorLevel(floor);
+  const level = opts?.level ?? floorLevel(floor);
   const spawns: FloorSpawn[] = [];
   if (!final) {
     const count = Math.min(95, 16 + Math.floor(floor * 0.8));
@@ -157,7 +160,7 @@ export function generateFloor(floor: number): DungeonFloor {
       if (room === startRoom || (guardian && room === endRoom)) continue;
       const tx = room.x + 1 + Math.floor(r() * (room.w - 2)), ty = room.y + 1 + Math.floor(r() * (room.h - 2));
       if (tiles[ty * W + tx] !== theme.floor) continue;
-      const elite = r() < 0.08 + floor * 0.002;
+      const elite = r() < 0.08 + floor * 0.002 + (opts?.eliteBonus ?? 0);
       spawns.push({ kind: pool[i % pool.length]!, tx, ty, level: level + (elite ? 6 : Math.floor(r() * 3)), elite });
     }
   }
@@ -169,13 +172,20 @@ export function generateFloor(floor: number): DungeonFloor {
     if (room === startRoom) continue;
     const tx = room.x + 1 + Math.floor(r() * (room.w - 2)), ty = room.y + 1 + Math.floor(r() * (room.h - 2));
     if (tiles[ty * W + tx] !== theme.floor || (tx === end.tx && ty === end.ty)) continue;
-    chests.push({ id: `abyss-${floor}-${i}`, tx, ty, gold: Math.round(30 + floor * floor * 2.2), item: tier[Math.floor(r() * tier.length)]!, qty: 1 + Math.floor(r() * 2) });
+    chests.push({ id: `${opts?.idPrefix ?? 'abyss'}-${floor}-${i}`, tx, ty, gold: Math.round(30 + floor * floor * 2.2), item: tier[Math.floor(r() * tier.length)]!, qty: 1 + Math.floor(r() * 2) });
     i++;
   }
   // Garante chão nos pontos-chave.
   for (const pt of [start, end]) for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) set(pt.tx + x, pt.ty + y, theme.floor);
-  const boss = guardian ? guardianBoss(floor, end.tx, end.ty - (final ? 0 : 2)) : null;
-  return { floor, theme, world: { tiles, biomes, nodes: [] }, w, h, ox: OX, oy: OY, rooms, start, stairs: end, spawns, chests, boss };
+  const boss = guardian || final ? guardianBoss(floor, end.tx, end.ty - (final ? 0 : 2)) : null;
+  // Poucas tochas: uma a cada ~4 salas, sempre presas à parede de cima.
+  const torches: { tx: number; ty: number }[] = [{ tx: start.tx, ty: startRoom.y - 1 }];
+  for (const room of rooms) {
+    if (room === startRoom || r() > 0.28) continue;
+    const tx = room.x + 1 + Math.floor(r() * (room.w - 2)), ty = room.y - 1;
+    if (tiles[ty * W + tx] === theme.wall) torches.push({ tx, ty });
+  }
+  return { floor, theme, world: { tiles, biomes, nodes: [] }, w, h, ox: OX, oy: OY, rooms, start, stairs: end, spawns, chests, boss, torches };
 }
 
 /** Verdadeiro se é possível caminhar do início até a escada (usado em testes). */
