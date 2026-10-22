@@ -12,6 +12,8 @@ import { buildTiles, drawChar, drawEnemy, drawStatue, drawNode } from "./gfx";
 import { BUILDINGS, TREASURES, ROOM, doorOf, createInterior, prepareExploration, canClaimTreasure, type Building } from './exploration';
 import { drawBuildings, drawGroundDetails, drawInterior, drawTreasure } from './scenery';
 import { Audio } from "./audio";
+import { ABYSS_BOSS_LOOK } from "./dungeon";
+import { carveEntrances, depthAction, surfaceEntrance, drawSurfaceEntrances, drawDepth, depthLights, depthDarkness, leaveDepth, type DepthState } from "./depthplay";
 import { objectiveWaypoint, type Waypoint } from "./waypoint";
 import { STORY_BOSS_LOOK, STORY_QUESTS, ALL_ECO_BOSSES, beatsFor, depthBonus, cycleBonus, cycleBossMult, endgameDrop, actChainQuests, type Beat } from "./story";
 
@@ -25,7 +27,7 @@ const LEGACY_BOSS_LOOK: Record<string, { kind: EnemyKind; tint: string; scale: n
   fenrir: { kind: "wolf", tint: "#b8e4ff", scale: 2.6 },
   crystal_golem: { kind: "golem", tint: "#b080ff", scale: 2.5 },
 };
-const BOSS_LOOK: Record<string, { kind: EnemyKind; tint: string; scale: number }> = { ...LEGACY_BOSS_LOOK, ...STORY_BOSS_LOOK };
+const BOSS_LOOK: Record<string, { kind: EnemyKind; tint: string; scale: number }> = { ...LEGACY_BOSS_LOOK, ...STORY_BOSS_LOOK, ...ABYSS_BOSS_LOOK };
 
 /** Cor de grading por bioma legado (os biomas de fronteira usam a própria cor-base). [r, g, b, alpha] */
 const GRADES: Partial<Record<Biome, [number, number, number, number]>> = {
@@ -50,7 +52,7 @@ interface BossState { def: BossDef; active: boolean; phase: 1 | 2; patT: number;
 export interface Enemy {
   id: number; kind: EnemyKind; x: number; y: number; hx: number; hy: number; hp: number; maxhp: number; atk: number; def: number;
   speed: number; xp: number; gold: number; level: number; cd: number; hurt: number; dir: number; alive: boolean; respawn: number;
-  slow: number; kbx: number; kby: number; wanderT: number; wx: number; wy: number; boss?: BossState; t: number; summoned?: boolean;
+  slow: number; kbx: number; kby: number; wanderT: number; wx: number; wy: number; boss?: BossState; t: number; summoned?: boolean; elite?: boolean;
 }
 interface Proj { x: number; y: number; vx: number; vy: number; life: number; dmg: number; from: "p" | "e"; kind: string; r: number; color: string; slow?: boolean }
 interface Tele { x: number; y: number; r: number; t: number; max: number; dmg: number }
@@ -84,13 +86,20 @@ export class Game {
   world: World;
   overworld: World;
   interior: Building | null = null;
+  /** Abismo do Cântico ou andar escuro de um templo (null = superfície). */
+  depth: DepthState | null = null;
+  depthReturn = { x: 0, y: 0 };
+  surfaceEnemies: Enemy[] = [];
+  /** Andar mais fundo já alcançado no Abismo. */
+  abyssBest = 0;
   returnPosition = { x: 0, y: 0 };
   discoveries = new Set<string>();
   openedChests = new Set<string>();
   transition = 0;
   doorCooldown = 0;
-  get areaName() { return this.interior?.name ?? (Math.hypot(this.p.x / TS - 122, this.p.y / TS - 126) < 19 ? 'Vila de Potos' : BIOME_NAMES[this.biome]); }
+  get areaName() { if (this.depth) return this.depth.kind === 'abyss' ? `Abismo do Cântico · Andar ${this.depth.floor}` : `${this.depth.temple?.name} · 2º andar`; return this.interior?.name ?? (Math.hypot(this.p.x / TS - 122, this.p.y / TS - 126) < 19 ? 'Vila de Potos' : BIOME_NAMES[this.biome]); }
   get localNpcs(): NpcDef[] {
+    if (this.depth) return [];
     if (!this.interior) return NPCS;
     const npc = NPCS.find(n => n.id === this.interior?.resident);
     return npc ? [{ ...npc, tx: 121, ty: 100 }] : [];
@@ -166,6 +175,7 @@ export class Game {
     this.lctx = lightContext;
     this.world = generateWorld();
     prepareExploration(this.world);
+    carveEntrances(this.world);
     this.overworld = this.world;
     this.tiles = buildTiles();
     this.buildMinimap();
@@ -259,7 +269,7 @@ export class Game {
   }
 
   populateFrontier() {
-    if(this.interior || (this.p.x<TS*LEGACY_W&&this.p.y<TS*LEGACY_H))return;
+    if(this.interior || this.depth || (this.p.x<TS*LEGACY_W&&this.p.y<TS*LEGACY_H))return;
     const sx=Math.floor(this.p.x/TS/32),sy=Math.floor(this.p.y/TS/24),key=`${sx},${sy}`;
     if(key===this.frontierSector)return;this.frontierSector=key;
     this.enemies=this.enemies.filter(e=>e.boss || (e.hx<TS*LEGACY_W&&e.hy<TS*LEGACY_H) || Math.hypot(e.x-this.p.x,e.y-this.p.y)<600);
@@ -595,11 +605,15 @@ export class Game {
     if (this.questStatus[q.id] !== "active") return false;
     if (q.goal.kind === "collect") return this.count(q.goal.item) >= q.goal.n;
     if (q.goal.kind === "boss") return this.bossesDone.has(q.goal.target);
+    if (q.goal.kind === "floor") return this.abyssBest >= q.goal.n;
+    if (q.goal.kind === "talk") return (this.questProg[q.id] ?? 0) >= 1;
     return (this.questProg[q.id] ?? 0) >= q.goal.n;
   }
   questProgressText(q: QuestDef) {
     if (q.goal.kind === "collect") return `${Math.min(this.count(q.goal.item), q.goal.n)}/${q.goal.n} ${ITEMS[q.goal.item].name}`;
-    if (q.goal.kind === "boss") return this.bossesDone.has(q.goal.target) ? "Chefe derrotado! Retorne." : `Derrote ${BOSSES.find((b) => b.id === (q.goal as { target: string }).target)?.name}`;
+    if (q.goal.kind === "boss") { const t = q.goal.target; return this.bossesDone.has(t) ? "Chefe derrotado! Retorne." : `Derrote ${BOSSES.find((b) => b.id === t)?.name ?? (t.startsWith("abyss_") ? `o guardião do andar ${t.slice(6)} do Abismo` : t)}`; }
+    if (q.goal.kind === "floor") return this.abyssBest >= q.goal.n ? "Andar alcançado! Retorne." : `Alcance o andar ${q.goal.n} do Abismo (recorde: ${this.abyssBest})`;
+    if (q.goal.kind === "talk") { const to = NPCS.find((n) => n.id === (q.goal as { npc: string }).npc); return (this.questProg[q.id] ?? 0) >= 1 ? "Recado entregue! Retorne." : `Fale com ${to?.name ?? "o destinatário"}`; }
     return `${this.questProg[q.id] ?? 0}/${q.goal.n} ${ENEMIES[q.goal.target].name}`;
   }
   questUnlocked(q: QuestDef) {
@@ -615,6 +629,11 @@ export class Game {
   }
   npcChoices(npc: NpcDef): DialogChoice[] {
     const ch: DialogChoice[] = [];
+    for (const q of QUESTS) {
+      if (this.questStatus[q.id] !== "active" || q.goal.kind !== "talk" || q.goal.npc !== npc.id || (this.questProg[q.id] ?? 0) >= 1) continue;
+      const line = q.goal.line, giver = NPCS.find((n) => n.id === q.giver);
+      ch.push({ label: `✉ Recado de ${giver?.name ?? "alguém"}`, act: () => { this.questProg[q.id] = 1; this.audio.sfx("pickup"); this.toast(`Missão pronta: ${q.title}`, "#a0ffa0"); this.say(npc, line); this.save(); } });
+    }
     for (const q of QUESTS.filter((q) => q.giver === npc.id && this.questStatus[q.id] === "active")) {
       if (this.questReady(q)) ch.push({ label: `✔ Entregar: ${q.title}`, act: () => this.completeQuest(q, npc) });
       else ch.push({ label: `… ${q.title}`, act: () => this.say(npc, `Ainda falta: ${this.questProgressText(q)}. ${q.desc}`) });
@@ -760,7 +779,7 @@ export class Game {
     return false;
   }
   interact() {
-    if (interactSettlement(this)) return;
+    if (!this.depth && interactSettlement(this)) return;
     if (this.interactExploration()) return;
     const npc = this.nearNpc(26);
     if (npc) { this.talk(npc); return; }
@@ -796,6 +815,8 @@ export class Game {
     this.gainXp(20); this.audio.sfx('pickup'); this.burst(this.p.x, this.p.y-12, '#ffe1a0', 22, 55, 2, -30); this.save();
   }
   interactExploration(): boolean {
+    if (this.depth) return !!depthAction(this, true);
+    if (!this.interior && surfaceEntrance(this, true)) return true;
     const p = this.p, near = (x:number,y:number,r=28) => Math.hypot(p.x-x*TS-8,p.y-y*TS-8)<r;
     if (this.interior) {
       if(near(ROOM.exitX,ROOM.exitY,32)){ this.leaveInterior(); return true; }
@@ -863,6 +884,7 @@ export class Game {
     if (p.dead > 0) {
       p.dead -= dt;
       if (p.dead <= 0) {
+        if (this.depth) { leaveDepth(this, true); this.p.respawnStatue = "village"; }
         const s = STATUES.find((x) => x.id === p.respawnStatue) ?? STATUES[0]; if (!s) return;
         p.x = s.tx * TS + 8; p.y = (s.ty + 2) * TS + 8; p.hp = Math.ceil(this.maxHp() / 2); p.mp = this.maxMp();
         p.gold = Math.floor(p.gold * 0.9);
@@ -921,7 +943,7 @@ export class Game {
 
     if(this.doorCooldown<=0){
       if(this.interior && Math.hypot(p.x-(ROOM.exitX*TS+8),p.y-(ROOM.exitY*TS+8))<12){this.leaveInterior();return;}
-      if(!this.interior){const b=BUILDINGS.find(b=>{const d=doorOf(b);return Math.hypot(p.x-d.tx*TS-8,p.y-d.ty*TS-8)<11;});if(b){this.enterInterior(b);return;}}
+      if(!this.interior&&!this.depth){const b=BUILDINGS.find(b=>{const d=doorOf(b);return Math.hypot(p.x-d.tx*TS-8,p.y-d.ty*TS-8)<11;});if(b){this.enterInterior(b);return;}}
     }
 
     // regen
@@ -929,7 +951,7 @@ export class Game {
     p.hp = Math.min(this.maxHp(), p.hp + dt * (0.3 + this.stats().vit * 0.05));
 
     // statues
-    for (const s of this.interior ? [] : STATUES) {
+    for (const s of this.interior || this.depth ? [] : STATUES) {
       if (Math.hypot(s.tx * TS + 8 - p.x, s.ty * TS + 12 - p.y) < 22) {
         if (!this.statues.has(s.id)) {
           this.statues.add(s.id); this.toast(`Estátua de Mana ativada: ${s.name}`, "#80f0ff"); this.audio.sfx("warp");
@@ -1110,6 +1132,7 @@ export class Game {
     this.shake = Math.max(0, this.shake - dt * 20);
   }
   darkness() {
+    if (this.depth) return depthDarkness(this);
     if (this.interior) return 0.08;
     if (this.biome === "cave") return 0.72;
     return Math.max(0, Math.cos(this.time * Math.PI * 2)) * 0.68;
@@ -1149,6 +1172,8 @@ export class Game {
     } else if(this.interior) {
       drawInterior(c,this.interior,wt);
       drawTreasure(c,110*TS+8,106*TS+12,this.openedChests.has(`house-${this.interior.id}`),wt);
+    } else if(this.depth) {
+      drawDepth(this,c,x0,y0,x1,y1,wt);
     } else {
       drawBuildings(c,wt);
       renderSettlement(this,c);
@@ -1185,11 +1210,11 @@ export class Game {
           draws.push({y:ty*TS+16,f:()=>this.art.frontierObject(c,b as FrontierBiome,tx,ty,wt)});
         }
       }
-      for(const gate of FRONTIER_GATES)if(gate.tx>=x0-2&&gate.tx<=x1+2&&gate.ty>=y0-2&&gate.ty<=y1+2)
+      for(const gate of this.depth?[]:FRONTIER_GATES)if(gate.tx>=x0-2&&gate.tx<=x1+2&&gate.ty>=y0-2&&gate.ty<=y1+2)
         draws.push({y:gate.ty*TS+16,f:()=>drawStatue(c,gate.tx*TS+8,gate.ty*TS+14,true,wt)});
-      draws.push({y:111*TS,f:()=>this.art.village(c,wt)});
+      if(!this.depth){draws.push({y:111*TS,f:()=>this.art.village(c,wt)});drawSurfaceEntrances(this,c,draws,x0,y0,x1,y1,wt);}
     }
-    for (const s of STATUES) {
+    for (const s of this.depth ? [] : STATUES) {
       const x = s.tx * TS + 8, y = s.ty * TS + 14;
       if (x < cx - 20 || x > cx + this.viewWidth + 20 || y < cy - 30 || y > cy + this.viewHeight + 30) continue;
       draws.push({ y, f: () => drawStatue(c, x, y, this.statues.has(s.id), wt) });
@@ -1215,7 +1240,8 @@ export class Game {
           drawEnemy(c, look.kind, e.x, e.y, e.t, e.dir, e.hurt > 0, look.scale, look.tint);
           c.fillStyle = "#ffd040"; const cyy = e.y - 18 * look.scale - 6; c.fillRect(e.x - 6, cyy, 12, 3); c.fillRect(e.x - 6, cyy - 3, 2, 3); c.fillRect(e.x - 1, cyy - 4, 2, 4); c.fillRect(e.x + 4, cyy - 3, 2, 3);
         } else {
-          drawEnemy(c, e.kind, e.x, e.y, e.t, e.dir, e.hurt > 0);
+          if (e.elite) { c.fillStyle = `rgba(255,200,60,${0.25 + Math.sin(wt * 6) * 0.1})`; c.beginPath(); c.ellipse(e.x, e.y, 11, 4, 0, 0, Math.PI * 2); c.fill(); drawEnemy(c, e.kind, e.x, e.y, e.t, e.dir, e.hurt > 0, 1.3, "#e8b040"); }
+          else drawEnemy(c, e.kind, e.x, e.y, e.t, e.dir, e.hurt > 0);
           if (e.slow > 0) { c.fillStyle = "rgba(150,220,255,0.35)"; c.fillRect(e.x - 7, e.y - 16, 14, 16); }
           if (e.hp < e.maxhp) { c.fillStyle = "#200"; c.fillRect(e.x - 8, e.y - 24, 16, 2); c.fillStyle = "#f44"; c.fillRect(e.x - 8, e.y - 24, 16 * (e.hp / e.maxhp), 2); }
           { const gap = e.level - this.p.level; c.font = "bold 6px monospace"; c.textAlign = "center"; c.fillStyle = "#000a"; c.fillText(`Nv${e.level}`, e.x + 0.5, e.y - 26.5); c.fillStyle = gap >= 5 ? "#ff5a5a" : gap >= 2 ? "#ffb347" : gap >= -2 ? "#f2f2d0" : "#9ab0a0"; c.fillText(`Nv${e.level}`, e.x, e.y - 27); }
@@ -1261,15 +1287,15 @@ export class Game {
         g.addColorStop(0, `rgba(0,0,0,${a})`); g.addColorStop(1, "rgba(0,0,0,0)");
         l.fillStyle = g; l.fillRect(x - cx - r, y - cy - r, r * 2, r * 2);
       };
-      hole(p.x, p.y - 8, 70 + Math.sin(wt * 6) * 2);
       const glows: { x: number; y: number; r: number; col: string }[] = [];
-      for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+      if (this.depth) depthLights(this, hole, glows, wt); else hole(p.x, p.y - 8, 70 + Math.sin(wt * 6) * 2);
+      if (!this.depth) for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
         const t = tileAt(this.world, tx, ty);
         if (t === T.CRYSTAL) { hole(tx * TS + 8, ty * TS + 8, 34, 0.8); glows.push({ x: tx * TS + 8, y: ty * TS + 8, r: 22, col: "rgba(180,100,255,0.35)" }); }
         if (t === T.WALL && hash(tx, ty, 1) < 0.25) { hole(tx * TS + 8, ty * TS + 8, 40, 0.9); glows.push({ x: tx * TS + 8, y: ty * TS + 8, r: 26, col: "rgba(255,180,80,0.3)" }); }
       }
       for (const n of this.world.nodes) if ((n.item === "mana_shard" || n.item === "crystal_ore") && n.respawn <= 0 && n.tx >= x0 && n.tx <= x1 && n.ty >= y0 && n.ty <= y1) hole(n.tx * TS + 8, n.ty * TS + 8, 26, 0.7);
-      for (const s of STATUES) if (this.statues.has(s.id)) { hole(s.tx * TS + 8, s.ty * TS, 50); glows.push({ x: s.tx * TS + 8, y: s.ty * TS, r: 30, col: "rgba(100,230,255,0.3)" }); }
+      for (const s of this.depth ? [] : STATUES) if (this.statues.has(s.id)) { hole(s.tx * TS + 8, s.ty * TS, 50); glows.push({ x: s.tx * TS + 8, y: s.ty * TS, r: 30, col: "rgba(100,230,255,0.3)" }); }
       for (const pr of this.projs) hole(pr.x, pr.y, 30, 0.9);
       for (const t of this.teles) hole(t.x, t.y, t.r + 10, 0.6);
       c.setTransform(1, 0, 0, 1, 0, 0);
@@ -1285,11 +1311,11 @@ export class Game {
     c.setTransform(1, 0, 0, 1, 0, 0);
     // dusk tint
     const dusk = Math.max(0, 1 - Math.abs(this.time - 0.75) * 12) + Math.max(0, 1 - Math.abs(this.time - 0.25) * 12);
-    if (dusk > 0 && this.biome !== "cave") { c.fillStyle = `rgba(255,120,40,${dusk * 0.15})`; c.fillRect(0, 0, this.viewWidth, this.viewHeight); }
+    if (dusk > 0 && this.biome !== "cave" && !this.depth) { c.fillStyle = `rgba(255,120,40,${dusk * 0.15})`; c.fillRect(0, 0, this.viewWidth, this.viewHeight); }
     // weather
-    if (!this.interior) this.renderWeather();
-    this.art.ambient(this,c);
-    if (!this.interior) this.godRays(c);
+    if (!this.interior && !this.depth) this.renderWeather();
+    if (!this.depth) this.art.ambient(this,c);
+    if (!this.interior && !this.depth) this.godRays(c);
     this.postFx(c);
     // floating text
     c.translate(-cx, -cy);
@@ -1302,7 +1328,7 @@ export class Game {
     }
     c.globalAlpha = 1;
     c.setTransform(1, 0, 0, 1, 0, 0);
-    if (!this.interior) { this.renderWaypoint(c); this.renderMinimap(); }
+    if (!this.interior && !this.depth) { this.renderWaypoint(c); this.renderMinimap(); }
     this.renderInteractionPrompt(c);
     if(this.transition>0){c.fillStyle=`rgba(13,24,25,${Math.min(1,this.transition*1.5)})`;c.fillRect(0,0,this.viewWidth,this.viewHeight);}
     if (p.dead > 0) { c.fillStyle = `rgba(0,0,0,${Math.min(0.8, (2.5 - p.dead))})`; c.fillRect(0, 0, this.viewWidth, this.viewHeight); }
@@ -1381,7 +1407,8 @@ export class Game {
   renderInteractionPrompt(c: CanvasRenderingContext2D) {
     const p=this.p, near=(x:number,y:number,r=30)=>Math.hypot(p.x-x*TS-8,p.y-y*TS-8)<r;
     let text='';
-    if(this.interior){
+    if(this.depth){text=depthAction(this,false);}
+    else if(this.interior){
       if(near(ROOM.exitX,ROOM.exitY,35))text='E · Sair';
       else if(near(110,106,30))text='E · Abrir baú';
       else if(near(114,100,42))text='E · Ler anotações';
@@ -1390,6 +1417,7 @@ export class Game {
     }else{
       const b=BUILDINGS.find(b=>{const d=doorOf(b);return near(d.tx,d.ty);});
       if(b)text='E · '+b.name;
+      else if(surfaceEntrance(this,false))text=surfaceEntrance(this,false);
       else if(TREASURES.some(t=>near(t.tx,t.ty,26)))text='E · Abrir baú';
     }
     if(!text&&this.nearNpc(26))text='E · Conversar';
@@ -1452,7 +1480,7 @@ export class Game {
   save() {
     try {
       const data = {
-        p: { ...this.p, ...(this.interior ? this.returnPosition : {}), dead: 0 }, inventory: this.inventory, questStatus: this.questStatus, questProg: this.questProg,
+        p: { ...this.p, ...(this.interior ? this.returnPosition : {}), ...(this.depth ? this.depthReturn : {}), dead: 0 }, abyssBest: this.abyssBest, inventory: this.inventory, questStatus: this.questStatus, questProg: this.questProg,
         discoveries: [...this.discoveries], openedChests: [...this.openedChests],
         settlement: this.settlement, terrainEdits:this.terrainEdits, statues: [...this.statues], bosses: [...this.bossesDone], time: this.time, cycle: this.cycle, seenBeats: [...this.seenBeats],
       };
@@ -1471,6 +1499,7 @@ export class Game {
       this.discoveries = new Set(d.discoveries ?? []); this.openedChests = new Set(d.openedChests ?? []);
       this.inventory = d.inventory; this.questStatus = d.questStatus; this.questProg = d.questProg;
       this.statues = new Set(d.statues); this.bossesDone = new Set(d.bosses); this.time = d.time ?? 0.3;
+      this.abyssBest = d.abyssBest ?? 0;
       this.cycle = d.cycle ?? 0; this.seenBeats = new Set(d.seenBeats ?? []);
       if (!d.seenBeats) this.seenBeats.add("prologue"); // saves antigos já viveram o começo da história
       if (this.cycle > 0) this.rebuildEnemies(); else this.retireDefeatedBosses();

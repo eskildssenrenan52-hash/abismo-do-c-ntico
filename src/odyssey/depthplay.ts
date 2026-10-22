@@ -1,8 +1,8 @@
 // Liga o Abismo do Cântico e os Templos Profundos ao motor (entrada, escadas, chefes, luz e salvamento).
 import type { Game, Enemy } from './engine';
-import { ABYSS_DOOR, ABYSS_ENTRY, ABYSS_FLOORS, ABYSS_BOSS_LOOK, FINAL_BOSS, FINAL_BOSS_ID, GUARDIANS, checkpoints, generateFloor, isGuardianFloor, type DungeonFloor } from './dungeon';
+import { ABYSS_DOOR, ABYSS_ENTRY, ABYSS_FLOORS, ABYSS_BOSS_LOOK, FINAL_BOSS, GUARDIANS, checkpoints, generateFloor, isGuardianFloor, type DungeonFloor } from './dungeon';
 import { TEMPLES, templeDoor, templeFootprint, generateTempleFloor, drawTemple, drawAbyssGate, drawStairs, drawWallTorch, type Temple, type StairStyle } from './depths';
-import { ITEMS, QUESTS, type NpcDef } from './data';
+import { QUESTS, type NpcDef } from './data';
 import { T, TS, W, H, type World } from './world';
 import { cycleBonus } from './story';
 import { drawTreasure } from './scenery';
@@ -153,4 +153,3 @@ export function depthLights(g: Game, hole: (x: number, y: number, r: number, a?:
   hole(d.data.start.tx * TS + 8, d.data.start.ty * TS + 8, 30, 0.6);
 }
 export const depthDarkness = (g: Game) => (g.depth?.kind === 'temple' ? 0.95 : 0.9);
-export { ITEMS as _ITEMS, FINAL_BOSS_ID };
