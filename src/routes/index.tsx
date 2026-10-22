@@ -163,7 +163,7 @@ function MainMenu() {
   }, []);
   useEffect(() => {
     if (!user) { setName(""); return; }
-    (supabase as any).from("profiles").select("username").eq("id", user.id).maybeSingle().then(({ data }) => setName(data?.username ?? ""));
+    (supabase as any).from("profiles").select("username").eq("id", user.id).maybeSingle().then(({ data }: any) => setName(data?.username ?? ""));
   }, [user]);
 
   return (
