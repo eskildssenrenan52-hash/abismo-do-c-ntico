@@ -16,6 +16,8 @@
 - [x] Trazer o repositório e recriar contas (perfil) no Lovable Cloud.
 - [x] Gerador da masmorra de 100 andares, 9 guardiões e chefe final Ømnia (src/odyssey/dungeon.ts).
 - [x] Gerador de 225 moradores com 4 missões cada, Selos regionais e o Coro dos Trinta (src/odyssey/townsfolk.ts).
-- [ ] Conectar masmorra e moradores ao motor (entrada em Potos, escadas, chefes, missões "falar"/"andar", salvamento).
-- [ ] Redesenhar todas as janelas em pixel art e organizar o livro de missões (abas e filtros).
+- [x] Conectar masmorra e moradores ao motor (entrada em Potos, escadas, chefes, recados, andares, salvamento).
+- [x] Livro de missões com abas, filtros e busca; moldura em pixel art nas janelas.
+- [x] Templos de 2º andar escuro em cada um dos 30 biomas (tocha obrigatória, inimigos mais fortes).
+- [ ] Redesenhar em pixel art os painéis restantes (inventário, HUD) individualmente.
 - [ ] Testes e verificação jogando.
