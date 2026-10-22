@@ -97,7 +97,7 @@ function templeSprite(t: Temple): CanvasImageSource | null {
 export function drawTemple(c: CanvasRenderingContext2D, t: Temple, wt: number) {
   const s = templeSprite(t), d = templeDoor(t), bx = d.tx * TS + 8, by = (d.ty + 1) * TS;
   if (!s) { c.fillStyle = FAMILY_COLOR[t.family]; c.fillRect(bx - 48, by - 96, 96, 96); return; }
-  const w = 112, h = Math.round((s.height as number) / (s.width as number) * w);
+  const sc = s as HTMLCanvasElement, w = 112, h = Math.round(sc.height / sc.width * w);
   c.drawImage(s, Math.round(bx - w / 2), Math.round(by - h), w, h);
   const glow = 0.25 + Math.sin(wt * 3) * 0.1;
   c.fillStyle = `rgba(255,220,140,${glow})`; c.fillRect(bx - 5, by - 22, 10, 3);

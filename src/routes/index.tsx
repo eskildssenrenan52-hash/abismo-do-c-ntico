@@ -163,7 +163,7 @@ function MainMenu() {
   }, []);
   useEffect(() => {
     if (!user) { setName(""); return; }
-    supabase.from("profiles").select("username").eq("id", user.id).maybeSingle().then(({ data }) => setName(data?.username ?? ""));
+    (supabase as any).from("profiles").select("username").eq("id", user.id).maybeSingle().then(({ data }) => setName(data?.username ?? ""));
   }, [user]);
 
   return (
@@ -206,7 +206,7 @@ function AccountPanel({ user, name, onName, onClose }: { user: User | null; name
     if (!user) return;
     const n = username.trim().slice(0, 24);
     if (!n) return;
-    const { error } = await supabase.from("profiles").update({ username: n, updated_at: new Date().toISOString() }).eq("id", user.id);
+    const { error } = await (supabase as any).from("profiles").update({ username: n, updated_at: new Date().toISOString() }).eq("id", user.id);
     if (error) setMsg("Não foi possível salvar."); else { onName(n); setMsg("Nome salvo!"); }
   };
 
