@@ -394,3 +394,15 @@ button:has(.control-sprite)>svg {display:none;}
 .account-backdrop{--ink:#050308;--paper:#fffdf6;--gold:#f6d18b;--gold-deep:#c48a2c;color:var(--paper)}
 .account-backdrop .menu-btn{display:block;text-align:center;font-family:'Press Start 2P',monospace;font-size:11px;padding:14px 16px;color:var(--paper);background:rgba(5,3,8,.72);border:2px solid rgba(246,209,139,.55);cursor:pointer}
 .account-backdrop .menu-btn.primary{background:linear-gradient(var(--gold),var(--gold-deep));color:var(--ink);border-color:var(--paper)}
+
+/* Janelas em pixel art (moldura e pergaminho gerados por IA) */
+.modal-content.game-panel{border:14px solid transparent;border-image:url('./assets/ui/panel-frame.png') 30 / 14px stretch;border-radius:0;image-rendering:pixelated;background-clip:padding-box}
+.quest-book{background:url('./assets/ui/parchment.jpg') center/cover;color:oklch(0.3 0.05 60);padding:14px;font-family:'DM Sans',sans-serif}
+.quest-tabs,.quest-filters{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.quest-tabs button,.quest-filters button,.quest-more{border:2px solid oklch(0.45 0.08 60);background:oklch(0.85 0.05 80);padding:3px 8px;font-size:11px;image-rendering:pixelated}
+.quest-tabs button.on,.quest-filters button.on{background:oklch(0.45 0.08 60);color:oklch(0.95 0.03 85)}
+.quest-filters input{flex:1;min-width:140px;border:2px solid oklch(0.45 0.08 60);background:oklch(0.95 0.03 85);padding:2px 6px;font-size:12px}
+.quest-count{font-size:11px;opacity:.7;margin:4px 0}
+.quest-entry{border-bottom:1px dashed oklch(0.45 0.08 60 / .5);padding:6px 0}
+.quest-entry-title{font-weight:700;display:flex;justify-content:space-between;gap:8px}.quest-entry-title span{font-weight:400;opacity:.7;font-size:11px}
+.quest-entry-desc{font-size:13px}.quest-entry-prog{font-size:12px;color:oklch(0.45 0.15 30)}

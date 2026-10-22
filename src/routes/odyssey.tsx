@@ -275,17 +275,7 @@ function Index() {
                 <div className="flex flex-wrap gap-1">{BEATS.filter((b) => g.seenBeats.has(b.id)).map((b) => <Button key={b.id} variant="outline" size="sm" onClick={() => { setPanel(null); g.cutscene = { beat: b, i: 0 }; }}>{b.title}</Button>)}</div>
               </Modal>
             )}
-            {panel === "quest" && (
-              <Modal title="Livro de Missões" onClose={() => setPanel(null)}>
-                {["Principais", "Secundárias"].map((h, hi) => (
-                  <div key={h} className="mb-3"><div className="text-primary mb-1">{h}</div>
-                    {QUESTS.filter((q) => q.main === (hi === 0) && g.questStatus[q.id]).map((q) => (
-                      <div key={q.id} className="border border-border p-2 mb-1 text-[11px]"><div>{g.questStatus[q.id] === "done" ? "✔ " : ""}{q.title}</div><div className="font-body text-base opacity-80">{q.desc}</div>{g.questStatus[q.id] === "active" && <div className="text-accent">{g.questProgressText(q)}</div>}</div>
-                    ))}
-                  </div>
-                ))}
-              </Modal>
-            )}
+            {panel === "quest" && <QuestBook g={g} onClose={() => setPanel(null)} />}
             {panel === "map" && (
               <Modal title="Atlas de Mana — 30 biomas" onClose={() => setPanel(null)}>
                 <div className="atlas-map relative w-full" style={{ aspectRatio: `${W}/${H}` }}>
@@ -372,4 +362,37 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 function Row({ id, qty, right, onClick }: { id: string; qty?: number; right: string; onClick: () => void }) {
   return <Button variant="game" onClick={onClick} title={ITEMS[id].desc} className="w-full flex items-center gap-2 p-1 hover:bg-secondary text-left"><Icon id={id} size={24} /><span className="flex-1 text-[11px]">{ITEMS[id].name}{qty && qty > 1 ? ` ×${qty}` : ""}</span><span className="text-primary text-[11px]">{right}</span></Button>;
+}
+
+function QuestBook({ g, onClose }: { g: Game; onClose: () => void }) {
+  const [tab, setTab] = useState<"active" | "available" | "done">("active");
+  const [cat, setCat] = useState<"all" | "main" | "folk" | "seal">("all");
+  const [q, setQ] = useState("");
+  const [limit, setLimit] = useState(40);
+  const npcName = (id: string) => NPCS.find((n) => n.id === id)?.name ?? "";
+  const list = QUESTS.filter((x) => {
+    const st = g.questStatus[x.id];
+    if (tab === "active" ? st !== "active" : tab === "done" ? st !== "done" : st || !g.questUnlocked(x)) return false;
+    const folk = x.giver.startsWith("folk_"), seal = x.id.endsWith("_seal") || x.id === "folk_choir_1";
+    if (cat === "main" && !x.main) return false;
+    if (cat === "folk" && (!folk || seal)) return false;
+    if (cat === "seal" && !seal) return false;
+    const t = q.trim().toLowerCase();
+    return !t || (x.title + " " + x.desc + " " + npcName(x.giver)).toLowerCase().includes(t);
+  });
+  return (
+    <Modal title={`Livro de Missões · ${Object.values(g.questStatus).filter((v) => v === "done").length}/${QUESTS.length} concluídas`} onClose={onClose}>
+      <div className="quest-book">
+        <div className="quest-tabs">{([["active", "Ativas"], ["available", "Disponíveis"], ["done", "Concluídas"]] as const).map(([id, l]) => <button key={id} className={tab === id ? "on" : ""} onClick={() => { setTab(id); setLimit(40); }}>{l}</button>)}</div>
+        <div className="quest-filters">{([["all", "Todas"], ["main", "Principais"], ["folk", "Moradores"], ["seal", "Selos e Coro"]] as const).map(([id, l]) => <button key={id} className={cat === id ? "on" : ""} onClick={() => setCat(id)}>{l}</button>)}
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar missão ou morador…" /></div>
+        <div className="quest-count">{list.length} missões</div>
+        {list.slice(0, limit).map((x) => (
+          <div key={x.id} className="quest-entry"><div className="quest-entry-title">{x.main ? "★ " : ""}{x.title}<span>{npcName(x.giver)}</span></div>
+            <div className="quest-entry-desc">{x.desc}</div>{g.questStatus[x.id] === "active" && <div className="quest-entry-prog">{g.questReady(x) ? "✔ Retorne a quem pediu" : g.questProgressText(x)}</div>}</div>
+        ))}
+        {list.length > limit && <button className="quest-more" onClick={() => setLimit(limit + 40)}>Mostrar mais</button>}
+      </div>
+    </Modal>
+  );
 }
