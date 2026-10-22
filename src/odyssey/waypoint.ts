@@ -17,6 +17,8 @@ export function objectiveWaypoint(q: QuestDef, state: 'active' | 'available', re
     const b = BOSSES.find(x => x.id === g.target);
     return b ? { tx: b.tx, ty: b.ty, label: b.name, hint: `Derrote ${b.name}`, color: '#ff5050' } : toGiver(q.title, '#ff5050');
   }
+  if (g.kind === 'talk') { const n = NPCS.find(x => x.id === g.npc); return n ? { tx: n.tx, ty: n.ty, label: n.name, hint: `Leve o recado a ${n.name}`, color: '#a0d0ff' } : null; }
+  if (g.kind === 'floor') return { tx: 144, ty: 150, label: 'Abismo', hint: `Desça ao andar ${g.n} do Abismo`, color: '#c78bff' };
   const kinds: EnemyKind[] = g.kind === 'kill' ? [g.target]
     : (Object.values(ENEMIES).filter(e => e.drops.some(([id]) => id === g.item)).map(e => e.kind));
   let best: SeenEnemy | null = null, bd = Infinity;

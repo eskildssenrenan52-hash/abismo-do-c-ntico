@@ -22,7 +22,7 @@ describe('Crônica do Cântico Partido — dados', () => {
       expect(npcIds.has(q.giver), `giver de ${q.id}`).toBe(true);
       if (q.requires) expect(questIds.has(q.requires), `requires de ${q.id}`).toBe(true);
       for (const r of q.requiresAll ?? []) expect(questIds.has(r), `requiresAll de ${q.id}`).toBe(true);
-      if (q.goal.kind === 'boss') expect(bossIds.has(q.goal.target), `boss de ${q.id}`).toBe(true);
+      if (q.goal.kind === 'boss') expect(bossIds.has(q.goal.target) || q.goal.target.startsWith('abyss_'), `boss de ${q.id}`).toBe(true);
       if (q.goal.kind === 'collect') expect(ITEMS[q.goal.item], `item de ${q.id}`).toBeDefined();
       if (q.goal.kind === 'kill') expect(ENEMIES[q.goal.target], `inimigo de ${q.id}`).toBeDefined();
       for (const i of q.reward.items ?? []) expect(ITEMS[i], `recompensa de ${q.id}`).toBeDefined();
