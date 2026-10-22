@@ -147,7 +147,11 @@ export const STATUES: Statue[] = [
 export type QuestGoal =
   | { kind: "kill"; target: EnemyKind; n: number }
   | { kind: "boss"; target: string }
-  | { kind: "collect"; item: string; n: number };
+  | { kind: "collect"; item: string; n: number }
+  /** Levar um recado: falar com outro morador. */
+  | { kind: "talk"; npc: string; line: string }
+  /** Alcançar um andar do Abismo do Cântico. */
+  | { kind: "floor"; n: number };
 export interface QuestDef { id: string; title: string; main: boolean; giver: string; desc: string; goal: QuestGoal; requires?: string; /** Todas estas missões precisam estar concluídas. */ requiresAll?: string[]; /** Ato da Crônica (2–5) a que a missão pertence. */ act?: number; /** Falas do NPC antes de oferecer a missão. */ intro?: string[]; /** Fala do NPC ao entregar. */ outro?: string; reward: { xp: number; gold: number; items?: string[] } }
 export const QUESTS: QuestDef[] = [
   { id: "m1", title: "O Despertar da Mana", main: true, giver: "elder", desc: "Cogumelos infestaram as planícies. Derrote 5 Cogumelos.", goal: { kind: "kill", target: "mushroom", n: 5 }, reward: { xp: 40, gold: 30, items: ["potion", "potion"] } },
